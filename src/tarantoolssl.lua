@@ -58,6 +58,24 @@ end
 
 ssl_init ()
 
+-- Ssl socket methods
+local ssl_socket_methods = {}
+
+-- Read method
+ssl_socket_methods.read = function (self, opts, timeout)
+    return self.sock:read (opts, timeout)
+end
+
+-- Write method
+ssl_socket_methods.write = function (self, octets, timeout)
+    return self.sock:write (octets, timeout)
+end
+
+-- Meta table for ssl socket
+local ssl_socket_mt = {
+    __index     = ssl_socket_methods
+}
+
 local function create_ctx ()
     local method = lib.TLS_server_method();
     if (method == nil) then
@@ -135,8 +153,8 @@ end
 
 local function sysread(self, charptr, size)
     self._errno = nil
-    local parent = self.parent    
-    local res = lib.SSL_read(parent.ssl, charptr, size)    
+    local ssl = self.parent.ssl
+    local res = lib.SSL_read(ssl, charptr, size)    
     if res < 0 then
         self._errno = boxerrno()
         return nil
@@ -223,7 +241,7 @@ local function read (self, opts, timeout)
     error('Usage: s:read(delimiter|chunk|{delimiter = x, chunk = x}, timeout)')
 end
 
-local function syswrite(self, charptr, size)    
+local function syswrite(self, charptr, size)
     self._errno = nil
     local ssl = self.parent.ssl
     local done = lib.SSL_write (ssl, charptr, size)    
@@ -247,8 +265,6 @@ local function write (self, octets, timeout)
         return 0
     end
 
-    print ("GOOD")
-
     local started = fiber.time()
     while true do
         local written = syswrite(self, p, e - p)
@@ -271,40 +287,33 @@ local function write (self, octets, timeout)
     end    
 end          
 
+local function create_ssl_client_socket (sock, ssl)
+    local ssl_object = {}
+    ssl_object.sock = sock
+    ssl_object.ssl = ssl
+    return setmetatable (ssl_object, ssl_socket_mt)
+end
+
 -- on socket accept
-local function on_accept (self, sock, from)
-    local ssl = lib.SSL_new (self.ctx)
-    lib.SSL_set_fd (ssl, sock:fd ())
+local function on_accept (server, client, from)
+    local ssl = lib.SSL_new (server.ctx)
+    lib.SSL_set_fd (ssl, client:fd ())
 
     if (lib.SSL_accept(ssl) == -1) then
         error ("Can't ssl accept")
     end        
     
-    self.ssl = ssl    
-    self.sock = sock
-    sock.parent = self
+    local sock = create_ssl_client_socket (client, ssl)
 
     -- override read function
-    sock.read = read
+    client.read = read
     -- override write function
-    sock.write = write
+    client.write = write
+    client.parent = sock
 
-    self.handler (self, from)
+    server.handler (sock, from)
     lib.SSL_free(ssl);
 end
-
-local ssl_socket_methods = {}
-ssl_socket_methods.read = function (self, opts, timeout)
-    return self.sock:read (opts, timeout)
-end
-
-ssl_socket_methods.write = function (self, octets, timeout)
-    return self.sock:write (octets, timeout)
-end
-
-local ssl_socket_mt = {
-    __index     = ssl_socket_methods
-}
 
 local function create_ssl_server_socket (ctx, handler)    
     local ssl_object = {}
@@ -342,7 +351,7 @@ local function tcp_server (host, port, cert, key, handler, timeout)
         error ("Can't create ssl context")
     end    
 
-    load_certificate (ctx, cert, key)    
+    load_certificate (ctx, cert, key)
 
     local sock = create_ssl_server_socket (ctx, handler)
     internal.tcp_server (host, port, sock.on_accept)

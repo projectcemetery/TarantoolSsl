@@ -1,3 +1,5 @@
+package.path = package.path .. ";./src/tarantoolssl.lua"
+
 local ssl = require ("tarantoolssl")
 
 local function on_accept (self, from)    
