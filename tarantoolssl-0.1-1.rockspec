@@ -10,7 +10,7 @@ description = {
       It's unofficial openssl secure socket for tarantool
    ]],
    homepage = "http://github.com/RapidFingers/TarantoolSsl",
-   license = "MIT/X11"
+   license = "MIT"
 }
 dependencies = {
    "lua >= 5.1, < 5.4"   
@@ -18,6 +18,6 @@ dependencies = {
 build = {
    type = "builtin",
    modules = {
-      tarantoolssl = "src/SecureSocket.lua"      
-   }   
+      tarantoolssl = "src/tarantoolssl.lua"
+   }
 }
